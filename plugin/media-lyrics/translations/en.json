@@ -1,0 +1,180 @@
+{
+  "no_lyrics": "♪ No lyrics available",
+  "not_a_song": "Not a song — lyrics are for music",
+  "nothing_playing": "Nothing playing",
+  "panel": {
+    "close": "Close",
+    "loading": "Loading lyrics…",
+    "lyrics": "Lyrics",
+    "next": "Next track",
+    "no_track": "No track is playing",
+    "pause": "Pause",
+    "play": "Play",
+    "play_from_here": "Play from here",
+    "previous": "Previous track",
+    "result": "Lyrics result",
+    "saved": "Saved",
+    "selection_failed": "Could not load the selected lyrics",
+    "synced": "Synced",
+    "unsynced": "Unsynced"
+  },
+  "playing": "Playing",
+  "settings": {
+    "album_art_only": {
+      "description": "Show only the circular artwork, like the built-in media widget on a vertical bar. The text is hidden and min_length, max_length, title_scroll and show_progress do not apply.",
+      "label": "Album art only"
+    },
+    "apple_developer_token": {
+      "description": "Developer token used for Apple Music catalog and lyrics requests.",
+      "label": "Apple Music developer token"
+    },
+    "apple_storefront": {
+      "description": "Apple Music storefront code, for example us, cn, jp, or hk.",
+      "label": "Apple Music storefront"
+    },
+    "apple_user_token": {
+      "description": "Optional Music-User-Token for lyrics requiring a user subscription.",
+      "label": "Apple Music user token"
+    },
+    "art_size": {
+      "description": "Artwork size in pixels, drawn as a circle.",
+      "label": "Artwork size"
+    },
+    "artist_first": {
+      "description": "Show \"Artist - Title\" instead of \"Title - Artist\". Ignored when the artist is hidden.",
+      "label": "Artist first"
+    },
+    "custom_json_field": {
+      "description": "Lyrics field in a JSON response, with dotted paths such as data.lyric. Leave empty for plain LRC.",
+      "label": "JSON lyrics field"
+    },
+    "custom_url": {
+      "description": "Supports {title}, {artist}, {album}, and {duration} placeholders. Text responses may contain LRC directly.",
+      "label": "Custom endpoint URL"
+    },
+    "hide_album_art": {
+      "description": "Hide the artwork and its fallback icon. A vertical bar always shows artwork only, so this applies to horizontal bars.",
+      "label": "Hide album art"
+    },
+    "hide_artist": {
+      "description": "Show only the track title.",
+      "label": "Hide artist"
+    },
+    "hide_when_idle": {
+      "description": "Hide the widget while the active player is paused or stopped.",
+      "label": "Hide when idle"
+    },
+    "hide_when_no_media": {
+      "description": "Hide the widget while no MPRIS player is active.",
+      "label": "Hide when no media"
+    },
+    "lyrics_directory": {
+      "description": "A directory for the .lrc and .txt lyric files. With one set, every song the bar shows is saved there as \"<artist> - <title>.lrc\" (timed, translations interleaved) and \"<artist> - <title>.txt\" (plain, for ncmpcpp). Left empty, no files are written and the lyrics are kept in memory.",
+      "label": "Lyrics directory"
+    },
+    "music_only": {
+      "description": "Treat a track with no artist tag as a film or web video: no lyrics are searched for it or saved, and the bar shows its title instead. Turn off to search every track.",
+      "label": "Lyrics for songs only"
+    },
+    "lyrics_offset_ms": {
+      "description": "Positive values show lyrics earlier; negative values show them later.",
+      "label": "Lyrics offset (ms)"
+    },
+    "lyrics_source": {
+      "description": "Choose a preset source, local-player lyrics, a custom endpoint, or external push protocol.",
+      "label": "Lyrics source",
+      "options": {
+        "apple_music": "Apple Music",
+        "auto": "Automatic fallback",
+        "custom": "Custom HTTP endpoint",
+        "external": "External IPC push",
+        "kugou": "Kugou Music",
+        "lrclib": "LRCLIB",
+        "mpris": "Local player (MPRIS)",
+        "musixmatch": "Musixmatch",
+        "netease": "NetEase Music (public API)",
+        "qishui": "Qishui Music",
+        "qqmusic": "QQ Music",
+        "splayer": "SPlayer",
+        "spotify": "Spotify"
+      }
+    },
+    "lyrics_sources": {
+      "description": "Source IDs tried from top to bottom: lrclib, netease, splayer, qqmusic, kugou, qishui, apple_music, spotify, musixmatch, mpris, or custom.",
+      "label": "Automatic source order"
+    },
+    "max_length": {
+      "description": "Maximum widget width in pixels; longer text is clipped to fit.",
+      "label": "Maximum length"
+    },
+    "min_length": {
+      "description": "Minimum widget width in pixels, as in the built-in media widget.",
+      "label": "Minimum length"
+    },
+    "musixmatch_token": {
+      "description": "User token for the Musixmatch desktop subtitle endpoint.",
+      "label": "Musixmatch user token"
+    },
+    "player_allowlist": {
+      "description": "Only use matching MPRIS player names or instances. Supports * wildcards; leave empty to allow all players.",
+      "label": "Allowed players"
+    },
+    "player_blocklist": {
+      "description": "Ignore matching MPRIS player names or instances. Supports * wildcards and takes priority over the allowlist.",
+      "label": "Blocked players"
+    },
+    "poll_interval_ms": {
+      "description": "How often the service refreshes MPRIS metadata and playback position.",
+      "label": "Player polling interval (ms)"
+    },
+    "qishui_api_url": {
+      "description": "Endpoint template supporting {title}, {artist}, and {album}. Required because public Qishui endpoints vary.",
+      "label": "Qishui API URL"
+    },
+    "qishui_token": {
+      "description": "Optional Bearer token sent only to the configured Qishui endpoint.",
+      "label": "Qishui token"
+    },
+    "show_lyrics": {
+      "description": "Replace the media text with the current lyric line while the track has lyrics.",
+      "label": "Show lyrics in the bar"
+    },
+    "show_progress": {
+      "description": "Paint the playback progress into the widget background, the way the built-in media widget does.",
+      "label": "Progress in the background"
+    },
+    "splayer_api_url": {
+      "description": "SPlayer local service URL. Defaults to http://127.0.0.1:25884 and reads the complete lyrics currently loaded by SPlayer.",
+      "label": "SPlayer API URL"
+    },
+    "spotify_access_token": {
+      "description": "Optional manually supplied Spotify access token. Takes priority over sp_dc.",
+      "label": "Spotify access token"
+    },
+    "spotify_sp_dc": {
+      "description": "Optional manually supplied Spotify web cookie. Stored as a normal plugin setting; never written to logs.",
+      "label": "Spotify sp_dc"
+    },
+    "title_scroll": {
+      "description": "Scroll the text when it does not fit. Widths are estimated from the font size, since the plugin API exposes no text metrics.",
+      "label": "Text scroll",
+      "options": {
+        "always": "Always",
+        "none": "Never",
+        "on_hover": "On hover"
+      }
+    },
+    "translation_language": {
+      "description": "Preferred translated-lyric language when supported by the source.",
+      "label": "Translation language",
+      "options": {
+        "en": "English",
+        "ja": "Japanese",
+        "ko": "Korean",
+        "zh-hans": "Simplified Chinese",
+        "zh-hant": "Traditional Chinese"
+      }
+    }
+  },
+  "source_label": "Lyrics source"
+}

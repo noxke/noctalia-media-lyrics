@@ -1,0 +1,180 @@
+{
+  "no_lyrics": "暂无可用歌词",
+  "not_a_song": "不是歌曲 —— 歌词仅针对音乐",
+  "nothing_playing": "没有正在播放的媒体",
+  "panel": {
+    "close": "关闭",
+    "loading": "正在加载歌词……",
+    "lyrics": "歌词",
+    "next": "下一首",
+    "no_track": "当前没有正在播放的歌曲",
+    "pause": "暂停",
+    "play": "播放",
+    "play_from_here": "从这里播放",
+    "previous": "上一首",
+    "result": "歌词结果",
+    "saved": "已保存",
+    "selection_failed": "无法加载所选歌词",
+    "synced": "有同步歌词",
+    "unsynced": "无同步歌词"
+  },
+  "playing": "播放中",
+  "settings": {
+    "album_art_only": {
+      "description": "只显示圆形封面，与内置 media 部件在竖栏上的效果一致。文本隐藏，最小/最大宽度、标题滚动与显示进度均不生效。",
+      "label": "仅显示专辑封面"
+    },
+    "apple_developer_token": {
+      "description": "用于 Apple Music 曲库和歌词请求的 developer token。",
+      "label": "Apple Music 开发者令牌"
+    },
+    "apple_storefront": {
+      "description": "例如 us、cn、jp 或 hk。",
+      "label": "Apple Music 商店区域"
+    },
+    "apple_user_token": {
+      "description": "需要订阅授权的歌词可填写 Music-User-Token。",
+      "label": "Apple Music 用户令牌"
+    },
+    "art_size": {
+      "description": "封面尺寸（像素），以圆形绘制。",
+      "label": "封面尺寸"
+    },
+    "artist_first": {
+      "description": "显示“歌手 - 标题”而不是“标题 - 歌手”。隐藏歌手时忽略。",
+      "label": "歌手在前"
+    },
+    "custom_json_field": {
+      "description": "JSON 响应中的歌词字段，支持点号路径，例如 data.lyric；留空则按纯 LRC 解析。",
+      "label": "JSON 歌词字段"
+    },
+    "custom_url": {
+      "description": "支持 {title}、{artist}、{album} 和 {duration} 占位符，文本响应可直接返回 LRC。",
+      "label": "自定义接口 URL"
+    },
+    "hide_album_art": {
+      "description": "隐藏封面与兜底图标。竖栏始终只显示封面，因此该设置只影响横向栏。",
+      "label": "隐藏专辑封面"
+    },
+    "hide_artist": {
+      "description": "只显示歌曲标题。",
+      "label": "隐藏歌手"
+    },
+    "hide_when_idle": {
+      "description": "当前播放器暂停或停止时隐藏部件。",
+      "label": "空闲时隐藏"
+    },
+    "hide_when_no_media": {
+      "description": "没有活动的 MPRIS 播放器时隐藏部件。",
+      "label": "无媒体时隐藏"
+    },
+    "lyrics_directory": {
+      "description": "写入 .lrc 与 .txt 歌词文件的目录。设置后，插件会把每首歌曲的歌词保存为“歌手 - 标题.lrc”（带时间轴，译文插在原句下方）与“歌手 - 标题.txt”（纯文本，供 ncmpcpp 使用）。留空则不写入任何文件，歌词只保留在内存中。",
+      "label": "歌词目录"
+    },
+    "music_only": {
+      "description": "把没有歌手标签的曲目视为影片或网络视频：不为它搜索或保存歌词，状态栏改显示标题。关闭后则对所有曲目搜索歌词。",
+      "label": "仅为歌曲显示歌词"
+    },
+    "lyrics_offset_ms": {
+      "description": "正值让歌词更早显示，负值让歌词更晚显示。",
+      "label": "歌词延迟（毫秒）"
+    },
+    "lyrics_source": {
+      "description": "选择预设词源、本地播放器歌词、自定义接口或外部推送协议。",
+      "label": "歌词来源",
+      "options": {
+        "apple_music": "Apple Music",
+        "auto": "自动回退",
+        "custom": "自定义 HTTP 接口",
+        "external": "外部 IPC 推送",
+        "kugou": "酷狗音乐",
+        "lrclib": "LRCLIB",
+        "mpris": "本地播放器（MPRIS）",
+        "musixmatch": "Musixmatch",
+        "netease": "网易云音乐",
+        "qishui": "汽水音乐",
+        "qqmusic": "QQ 音乐",
+        "splayer": "SPlayer",
+        "spotify": "Spotify"
+      }
+    },
+    "lyrics_sources": {
+      "description": "按从上到下的顺序尝试词源，可填写 lrclib、netease、splayer、qqmusic、kugou、qishui、apple_music、spotify、musixmatch、mpris 或 custom。",
+      "label": "自动词源顺序"
+    },
+    "max_length": {
+      "description": "部件的最大宽度（像素），过长的文本会被裁切。",
+      "label": "最大宽度"
+    },
+    "min_length": {
+      "description": "部件的最小宽度（像素），与内置 media 部件一致。",
+      "label": "最小宽度"
+    },
+    "musixmatch_token": {
+      "description": "用于 Musixmatch 桌面字幕接口的 usertoken。",
+      "label": "Musixmatch 用户令牌"
+    },
+    "player_allowlist": {
+      "description": "仅使用匹配的 MPRIS 播放器。留空表示允许全部；支持 * 通配符，可匹配播放器名称或实例名。",
+      "label": "播放器白名单"
+    },
+    "player_blocklist": {
+      "description": "应用白名单后忽略匹配的 MPRIS 播放器。支持 * 通配符，例如 chromium* 或 firefox*。",
+      "label": "播放器黑名单"
+    },
+    "poll_interval_ms": {
+      "description": "服务刷新 MPRIS 元数据和播放进度的间隔。",
+      "label": "播放器轮询频率（毫秒）"
+    },
+    "qishui_api_url": {
+      "description": "支持 {title}、{artist}、{album} 的接口模板；汽水公开接口不稳定，因此需要自行填写。",
+      "label": "汽水音乐接口 URL"
+    },
+    "qishui_token": {
+      "description": "仅发送给自定义汽水接口的可选 Bearer token。",
+      "label": "汽水音乐令牌"
+    },
+    "show_lyrics": {
+      "description": "歌曲有歌词时，用当前歌词行代替媒体文本。",
+      "label": "在状态栏显示歌词"
+    },
+    "show_progress": {
+      "description": "把播放进度画成控件背景的填充色，与内置媒体控件一致。",
+      "label": "背景显示进度"
+    },
+    "splayer_api_url": {
+      "description": "SPlayer 本地服务地址，默认 http://127.0.0.1:25884。直接读取 SPlayer 当前加载的完整歌词数据。",
+      "label": "SPlayer 接口地址"
+    },
+    "spotify_access_token": {
+      "description": "可选的 Spotify access token，优先于 sp_dc。",
+      "label": "Spotify 访问令牌"
+    },
+    "spotify_sp_dc": {
+      "description": "用户手动填写的 Spotify 网页 Cookie。它会以普通插件设置保存，但不会写入日志。",
+      "label": "Spotify sp_dc"
+    },
+    "title_scroll": {
+      "description": "文本放不下时滚动显示。插件 API 无法获取字体度量，宽度按字号估算。",
+      "label": "文本滚动",
+      "options": {
+        "always": "始终",
+        "none": "从不",
+        "on_hover": "悬停时"
+      }
+    },
+    "translation_language": {
+      "description": "词源支持时优先请求的翻译语言。",
+      "label": "歌词翻译语言",
+      "options": {
+        "en": "英语",
+        "ja": "日语",
+        "ko": "韩语",
+        "zh-hans": "简体中文",
+        "zh-hant": "繁体中文"
+      }
+    }
+  },
+  "source_label": "歌词来源"
+}

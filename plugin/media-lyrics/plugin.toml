@@ -1,0 +1,360 @@
+# Fork of the community plugin h465855hgg/lyrics 1.5.5 (MIT) — see FORK.md for what changed.
+# The bar widget is a port of Noctalia's built-in media widget (artwork, track text, progress)
+# with the current lyric line and a media/lyrics panel on top; the lyrics it shows are also
+# written to disk for MPD clients.
+id = "noxke/media-lyrics"
+name = "MediaLyrics"
+version = "2.7.0"
+# 22 is the first level whose entry scripts can require a shared module (progress.luau).
+plugin_api = 22
+author = "noxke"
+license = "MIT"
+dependencies = ["playerctl", "python3", "cp", "chmod", "timeout"]
+tags = ["bar", "panel", "service", "music", "media", "lyrics"]
+icon = "music"
+description = "Media widget with synchronized lyrics: the media widget's artwork, track text and progress, the current lyric line, a full lyrics panel, and .lrc/.txt lyric files saved for MPD clients."
+
+[[setting]]
+key = "player_allowlist"
+type = "string_list"
+label_key = "settings.player_allowlist.label"
+description_key = "settings.player_allowlist.description"
+default = []
+advanced = true
+
+[[setting]]
+key = "player_blocklist"
+type = "string_list"
+label_key = "settings.player_blocklist.label"
+description_key = "settings.player_blocklist.description"
+default = []
+advanced = true
+
+[[setting]]
+key = "lyrics_source"
+type = "select"
+label_key = "settings.lyrics_source.label"
+description_key = "settings.lyrics_source.description"
+default = "auto"
+options = [
+  { value = "auto", label_key = "settings.lyrics_source.options.auto" },
+  { value = "lrclib", label_key = "settings.lyrics_source.options.lrclib" },
+  { value = "netease", label_key = "settings.lyrics_source.options.netease" },
+  { value = "splayer", label_key = "settings.lyrics_source.options.splayer" },
+  { value = "qqmusic", label_key = "settings.lyrics_source.options.qqmusic" },
+  { value = "kugou", label_key = "settings.lyrics_source.options.kugou" },
+  { value = "qishui", label_key = "settings.lyrics_source.options.qishui" },
+  { value = "apple_music", label_key = "settings.lyrics_source.options.apple_music" },
+  { value = "spotify", label_key = "settings.lyrics_source.options.spotify" },
+  { value = "musixmatch", label_key = "settings.lyrics_source.options.musixmatch" },
+  { value = "mpris", label_key = "settings.lyrics_source.options.mpris" },
+  { value = "custom", label_key = "settings.lyrics_source.options.custom" },
+  { value = "external", label_key = "settings.lyrics_source.options.external" },
+]
+
+[[setting]]
+key = "lyrics_sources"
+type = "string_list"
+label_key = "settings.lyrics_sources.label"
+description_key = "settings.lyrics_sources.description"
+default = ["lrclib", "netease", "splayer", "qqmusic", "kugou", "qishui", "apple_music", "spotify", "musixmatch"]
+visible_when = { key = "lyrics_source", values = ["auto"] }
+advanced = true
+
+[[setting]]
+key = "translation_language"
+type = "select"
+label_key = "settings.translation_language.label"
+description_key = "settings.translation_language.description"
+default = "zh-Hans"
+options = [
+  { value = "zh-Hans", label_key = "settings.translation_language.options.zh-hans" },
+  { value = "zh-Hant", label_key = "settings.translation_language.options.zh-hant" },
+  { value = "en", label_key = "settings.translation_language.options.en" },
+  { value = "ja", label_key = "settings.translation_language.options.ja" },
+  { value = "ko", label_key = "settings.translation_language.options.ko" },
+]
+
+[[setting]]
+key = "spotify_sp_dc"
+type = "string"
+label_key = "settings.spotify_sp_dc.label"
+description_key = "settings.spotify_sp_dc.description"
+default = ""
+advanced = true
+visible_when = { key = "lyrics_source", values = ["spotify"] }
+
+[[setting]]
+key = "spotify_access_token"
+type = "string"
+label_key = "settings.spotify_access_token.label"
+description_key = "settings.spotify_access_token.description"
+default = ""
+advanced = true
+visible_when = { key = "lyrics_source", values = ["spotify"] }
+
+[[setting]]
+key = "apple_developer_token"
+type = "string"
+label_key = "settings.apple_developer_token.label"
+description_key = "settings.apple_developer_token.description"
+default = ""
+advanced = true
+visible_when = { key = "lyrics_source", values = ["apple_music"] }
+
+[[setting]]
+key = "apple_user_token"
+type = "string"
+label_key = "settings.apple_user_token.label"
+description_key = "settings.apple_user_token.description"
+default = ""
+advanced = true
+visible_when = { key = "lyrics_source", values = ["apple_music"] }
+
+[[setting]]
+key = "apple_storefront"
+type = "string"
+label_key = "settings.apple_storefront.label"
+description_key = "settings.apple_storefront.description"
+default = "us"
+advanced = true
+visible_when = { key = "lyrics_source", values = ["apple_music"] }
+
+[[setting]]
+key = "musixmatch_token"
+type = "string"
+label_key = "settings.musixmatch_token.label"
+description_key = "settings.musixmatch_token.description"
+default = ""
+advanced = true
+visible_when = { key = "lyrics_source", values = ["musixmatch"] }
+
+[[setting]]
+key = "splayer_api_url"
+type = "string"
+label_key = "settings.splayer_api_url.label"
+description_key = "settings.splayer_api_url.description"
+default = "http://127.0.0.1:25884"
+advanced = true
+visible_when = { key = "lyrics_source", values = ["splayer"] }
+
+[[setting]]
+key = "qishui_api_url"
+type = "string"
+label_key = "settings.qishui_api_url.label"
+description_key = "settings.qishui_api_url.description"
+default = ""
+advanced = true
+visible_when = { key = "lyrics_source", values = ["qishui"] }
+
+[[setting]]
+key = "qishui_token"
+type = "string"
+label_key = "settings.qishui_token.label"
+description_key = "settings.qishui_token.description"
+default = ""
+advanced = true
+visible_when = { key = "lyrics_source", values = ["qishui"] }
+
+[[setting]]
+key = "custom_url"
+type = "string"
+label_key = "settings.custom_url.label"
+description_key = "settings.custom_url.description"
+default = ""
+visible_when = { key = "lyrics_source", values = ["custom"] }
+
+[[setting]]
+key = "custom_json_field"
+type = "string"
+label_key = "settings.custom_json_field.label"
+description_key = "settings.custom_json_field.description"
+default = "syncedLyrics"
+visible_when = { key = "lyrics_source", values = ["custom"] }
+advanced = true
+
+[[setting]]
+key = "lyrics_offset_ms"
+type = "int"
+label_key = "settings.lyrics_offset_ms.label"
+description_key = "settings.lyrics_offset_ms.description"
+default = 0
+min = -10000
+max = 10000
+
+[[setting]]
+key = "poll_interval_ms"
+type = "int"
+label_key = "settings.poll_interval_ms.label"
+description_key = "settings.poll_interval_ms.description"
+default = 500
+min = 100
+max = 5000
+advanced = true
+
+# --- Lyric files (fork addition) ---------------------------------------------
+# Writes the lyrics of every track the bar is showing to lyrics_directory as
+# "<artist> - <title>.lrc" (timed, translations interleaved) plus
+# "<artist> - <title>.txt" (plain, for ncmpcpp's lyrics screen), so an MPD
+# client can display them without querying the plugin. An empty directory
+# leaves the files unwritten and the lyrics live in the plugin's own memory
+# only. Films and web videos are not songs: no lyrics are searched for them and
+# none are written, unless music_only is turned off.
+
+[[setting]]
+key = "lyrics_directory"
+type = "string"
+label_key = "settings.lyrics_directory.label"
+description_key = "settings.lyrics_directory.description"
+default = ""
+
+[[setting]]
+key = "music_only"
+type = "bool"
+label_key = "settings.music_only.label"
+description_key = "settings.music_only.description"
+default = true
+
+# Keyboard shortcut for opening the lyrics selector panel.
+[[shortcut]]
+id = "open_panel"
+entry = "shortcut.luau"
+
+# Headless background service: polls MPRIS metadata, fetches lyrics, publishes state.
+[[service]]
+id = "service"
+entry = "service.luau"
+
+# Media panel: now playing, transport controls, full lyrics and the lyric-source picker.
+[[panel]]
+id = "panel"
+entry = "panel.luau"
+width = 520
+height = 465
+placement = "attached"
+open_near_click = true
+
+# Bar widget: our port of the built-in media widget. The setting keys, defaults
+# and behaviour mirror it (see FORK.md); the current lyric line and show_lyrics
+# are the fork's extension.
+#
+# rotate_album_art is deliberately absent: the built-in widget rotates the
+# artwork itself and the plugin API has no rotation transform, so the setting
+# could only ever be a dead switch.
+[[widget]]
+id = "media"
+entry = "media.luau"
+
+  # Defaults of the built-in media widget: left opens its panel, right toggles
+  # playback, the thumb buttons skip tracks. Each one is rebindable per instance
+  # under [widget.<name>.actions].
+  [widget.actions]
+  left = "panel-toggle noxke/media-lyrics:panel"
+  right = "media toggle"
+  back = "media previous"
+  forward = "media next"
+
+  [[widget.setting]]
+  key = "album_art_only"
+  type = "bool"
+  label_key = "settings.album_art_only.label"
+  description_key = "settings.album_art_only.description"
+  default = false
+  visible_when = { key = "hide_album_art", values = ["false"] }
+
+  [[widget.setting]]
+  key = "hide_album_art"
+  type = "bool"
+  label_key = "settings.hide_album_art.label"
+  description_key = "settings.hide_album_art.description"
+  default = false
+  visible_when = { key = "album_art_only", values = ["false"] }
+
+  [[widget.setting]]
+  key = "hide_artist"
+  type = "bool"
+  label_key = "settings.hide_artist.label"
+  description_key = "settings.hide_artist.description"
+  default = false
+  visible_when = { key = "album_art_only", values = ["false"] }
+
+  [[widget.setting]]
+  key = "artist_first"
+  type = "bool"
+  label_key = "settings.artist_first.label"
+  description_key = "settings.artist_first.description"
+  default = false
+  visible_when = { key = "album_art_only", values = ["false"] }
+
+  [[widget.setting]]
+  key = "min_length"
+  type = "int"
+  label_key = "settings.min_length.label"
+  description_key = "settings.min_length.description"
+  default = 64
+  min = 0
+  max = 800
+  visible_when = { key = "album_art_only", values = ["false"] }
+
+  [[widget.setting]]
+  key = "max_length"
+  type = "int"
+  label_key = "settings.max_length.label"
+  description_key = "settings.max_length.description"
+  default = 176
+  min = 40
+  max = 800
+  visible_when = { key = "album_art_only", values = ["false"] }
+
+  [[widget.setting]]
+  key = "art_size"
+  type = "int"
+  label_key = "settings.art_size.label"
+  description_key = "settings.art_size.description"
+  default = 16
+  min = 8
+  max = 96
+
+  [[widget.setting]]
+  key = "title_scroll"
+  type = "select"
+  label_key = "settings.title_scroll.label"
+  description_key = "settings.title_scroll.description"
+  default = "always"
+  visible_when = { key = "album_art_only", values = ["false"] }
+  options = [
+    { value = "none", label_key = "settings.title_scroll.options.none" },
+    { value = "always", label_key = "settings.title_scroll.options.always" },
+    { value = "on_hover", label_key = "settings.title_scroll.options.on_hover" },
+  ]
+
+  [[widget.setting]]
+  key = "show_progress"
+  type = "bool"
+  label_key = "settings.show_progress.label"
+  description_key = "settings.show_progress.description"
+  default = true
+  visible_when = { key = "album_art_only", values = ["false"] }
+
+  [[widget.setting]]
+  key = "hide_when_no_media"
+  type = "bool"
+  label_key = "settings.hide_when_no_media.label"
+  description_key = "settings.hide_when_no_media.description"
+  default = false
+
+  [[widget.setting]]
+  key = "hide_when_idle"
+  type = "bool"
+  label_key = "settings.hide_when_idle.label"
+  description_key = "settings.hide_when_idle.description"
+  default = false
+
+  # --- Lyric extension --------------------------------------------------------
+
+  [[widget.setting]]
+  key = "show_lyrics"
+  type = "bool"
+  label_key = "settings.show_lyrics.label"
+  description_key = "settings.show_lyrics.description"
+  default = true

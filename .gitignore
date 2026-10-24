@@ -1,0 +1,15 @@
+# Runtime data the plugin writes next to itself.
+plugin/media-lyrics/.cache/
+
+# Python bytecode from the plugin's tests and helper scripts.
+__pycache__/
+*.py[cod]
+
+# Capture and checkout scratch produced while working on this repo.
+.check/
+.scratch/
+
+# Editor and OS noise.
+*.swp
+*~
+.DS_Store
