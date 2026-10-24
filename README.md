@@ -17,6 +17,8 @@ local MPD, a video in Firefox. Playback state comes from MPRIS; lyrics come from
 
 ## What it looks like
 
+<img src="plugin/media-lyrics/thumbnail.webp" alt="The bar widget carrying the lyric line 潜身裂缝里 心声的召唤, above the panel showing the same line highlighted in the full lyrics of 越冰船" width="720">
+
 | Where | What it shows |
 | --- | --- |
 | Bar widget | Album art, the current lyric line (or `artist - title` between lines), a progress fill behind the text |
