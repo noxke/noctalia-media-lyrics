@@ -29,7 +29,7 @@ panel to pick one. This fork keeps all of that and adds:
 | Plugin id `h465855hgg/lyrics` → `noxke/media-lyrics` | `plugin.toml`, the panel references at `media.luau` and `shortcut.luau`, and `README.md` |
 | `author` → `noxke`, `name` → `MediaLyrics` | `plugin.toml` header |
 | Entries renamed to media-first names: `lyrics.luau` → `media.luau`, `lyrics_selector.luau` → `panel.luau`, `lyrics_service.luau` → `service.luau`, `lyrics_shortcut.luau` → `shortcut.luau`; ids `lyrics`/`selector`/`service`/`open_selector` → `media`/`panel`/`service`/`open_panel` | `plugin.toml` |
-| Community-store assets not carried over: `.cache/`, `screenshots/`, `thumbnail.webp` | — |
+| Community-store assets not carried over: `.cache/`, `screenshots/` | — |
 | `FORK.md` and `LICENSE` added | — |
 | **Lyric files**: `.lrc` (timed, translation/romanization interleaved) + `.txt` (no timestamps) written to a configurable directory | `lyrics_writer.py`, `service.luau`, `plugin.toml` |
 | **Songs only** (`music_only`): a track with no artist tag is a video — no lyrics searched or written | `service.luau`, `plugin.toml` |
