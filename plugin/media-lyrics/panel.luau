@@ -19,6 +19,18 @@ local dirty = true
 local open = false
 local scrollKey = 0
 local lastSecond = -1
+local updateIntervalMs = nil
+
+local PLAYING_UPDATE_MS = 1000
+local IDLE_UPDATE_MS = 1000
+
+local function syncUpdateInterval()
+  local nextInterval = open and playing and PLAYING_UPDATE_MS or IDLE_UPDATE_MS
+  if nextInterval ~= updateIntervalMs then
+    updateIntervalMs = nextInterval
+    noctalia.setUpdateInterval(nextInterval)
+  end
+end
 
 local SOURCE_NAMES = {
   lrclib = "LRCLIB", netease = "NetEase", splayer = "SPlayer", qqmusic = "QQ Music", kugou = "Kugou",
@@ -37,11 +49,11 @@ local SOURCE_NAMES = {
 -- last LYRIC_ROWS_AFTER lines, which are revealed as rows rather than through that node.
 local LYRIC_ROW_HEIGHT = 34
 local LYRIC_ROWS_AFTER = 5
--- Two seconds at the two position ticks the service publishes per second.
-local LYRIC_IDLE_TICKS = 4
+-- After a manual scroll, following resumes after this pause.
+local LYRIC_IDLE_MS = 2000
 
-local idleTicks = 0
 local scrolledAway = false
+local scrolledAwayUntil = nil
 local hoveredIndex = nil
 local viewportHeight = 0
 local contentRows = 0
@@ -68,6 +80,11 @@ local renderedSeekMs = -1
 
 local function shellQuote(value)
   return "'" .. tostring(value):gsub("'", "'\\''") .. "'"
+end
+
+local function wallMs()
+  if noctalia.nowMs ~= nil then return noctalia.nowMs() end
+  return os.clock() * 1000
 end
 
 local function trackKey(value)
@@ -261,7 +278,6 @@ function onLyricsScroll(offset, maxOffset)
   local moved = tonumber(offset) or 0
   local endOffset = tonumber(maxOffset) or 0
   scrollOffset = moved
-  idleTicks = 0
   local expected = revealTargetOffset
   local ours = false
   if expected then
@@ -270,7 +286,10 @@ function onLyricsScroll(offset, maxOffset)
     ours = true
     revealing = false
   end
-  if not ours then scrolledAway = true end
+  if not ours then
+    scrolledAway = true
+    scrolledAwayUntil = wallMs() + LYRIC_IDLE_MS
+  end
 
   -- This callback is the one place the shell states how tall the viewport is: with the content
   -- height known, the offset it clamped to gives the viewport.
@@ -513,11 +532,15 @@ render = function()
   panel.render(ui.column({ flexGrow = 1, gap = 12, align = "stretch" }, sections))
 end
 
--- A plugin panel receives no periodic update() tick, so the tree is rebuilt from
--- the watchers themselves while the panel is open.
+-- Watchers rebuild the tree immediately for discrete changes. The update tick is
+-- only needed for the smooth playing seek bar and stays slow while closed.
 refresh = function()
+  if not open then
+    dirty = false
+    return
+  end
   dirty = true
-  if open then render() end
+  render()
 end
 
 local function watch(key, transform)
@@ -534,32 +557,24 @@ watch("lyrics", function(value)
   -- A new song starts at its first line, whatever the closing lines left the view on.
   scrollKey = scrollKey + 1
   scrolledAway = false
-  idleTicks = 0
+  scrolledAwayUntil = nil
   lastLyricIndex = currentLyricIndex()
   settleReveal()
 end)
+watch("is_music", function(value) isMusic = value ~= false end)
 watch("cover", function(value) cover = value end)
-watch("playing", function(value) playing = value == true end)
+watch("playing", function(value)
+  playing = value == true
+  syncUpdateInterval()
+end)
 watch("player_instance", function(value) playerInstance = tostring(value or "") end)
 watch("lyrics_source_used", function(value) sourceUsed = tostring(value or "") end)
 watch("lyrics_file", function(value) lyricsFile = tostring(value or "") end)
 
--- The playback clock republishes the position about twice a second; the idle count below
--- is expressed in those ticks rather than in seconds.
+-- Seeks and pauses report immediately. Normal playback follows the sung line
+-- from the panel's one-second paint tick while it is open.
 playback.attach(function()
-  if scrolledAway then
-    -- While the reader is elsewhere in the song the tree is left alone, because a rebuild
-    -- would move the view back to the sung row and lose their place. Only the idle
-    -- count brings it back to the sung line.
-    idleTicks = idleTicks + 1
-    if idleTicks >= LYRIC_IDLE_TICKS then
-      scrolledAway = false
-      hoveredIndex = nil
-      settleReveal()
-      refresh()
-    end
-    return
-  end
+  if not open then return end
   local second = math.floor(playback.getUs() / 1000000)
   if second ~= lastSecond then
     lastSecond = second
@@ -578,7 +593,7 @@ local function playerctl(action)
 end
 
 -- Moves the player and the clock together, so the bar and the labels are on the new position
--- before the poll that confirms the seek arrives.
+-- before the MPRIS seek event confirms it.
 function seekToUs(us)
   if playerInstance == "" then return end
   playback.noteSeek(us)
@@ -618,18 +633,20 @@ end
 function onPlayPauseClicked()
   if playerInstance == "" then return end
   playerctl("play-pause")
-  -- Optimistic flip so the button responds before the next service poll.
+  -- Optimistic flip so the button responds before the MPRIS event lands.
   playing = not playing
+  syncUpdateInterval()
   refresh()
 end
 
 function onOpen(_context)
   noctalia.state.set("media_panel_open", true)
   open = true
+  syncUpdateInterval()
   scrollKey = scrollKey + 1
   scrolledAway = false
+  scrolledAwayUntil = nil
   hoveredIndex = nil
-  idleTicks = 0
   lastLyricIndex = currentLyricIndex()
   settleReveal()
   dirty = true
@@ -639,20 +656,29 @@ end
 function onClose()
   noctalia.state.set("media_panel_open", false)
   open = false
+  dirty = false
+  syncUpdateInterval()
 end
 
--- A track of a few minutes put on a bar a few hundred pixels wide moves about a pixel
--- every 200 ms, so repainting at that rate carries the bar instead of stepping it.
+-- The slider and clock are whole-second values. State watches cover lyric-line
+-- changes and seeks, so playback only needs a one-second clock refresh.
 local lastPaintUs = -1
-local PAINT_STEP_US = 200000
+local PAINT_STEP_US = 1000000
 
 function update()
   local us = playback.getUs()
+  if open and scrolledAway and scrolledAwayUntil ~= nil and wallMs() >= scrolledAwayUntil then
+    scrolledAway = false
+    scrolledAwayUntil = nil
+    hoveredIndex = nil
+    settleReveal()
+    dirty = true
+  end
   if open and playback.isPlaying() and math.abs(us - lastPaintUs) >= PAINT_STEP_US then
     lastPaintUs = us
     dirty = true
   end
-  if dirty then render() end
+  if open and dirty then render() end
 end
 
 function onCloseClicked()
@@ -673,6 +699,6 @@ function onCandidateChange(index, _label)
   })
 end
 
-noctalia.setUpdateInterval(200)
+syncUpdateInterval()
 
 render()

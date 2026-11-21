@@ -12,8 +12,8 @@ INSTALL_DEPS=0
 STATE_HOME="${XDG_STATE_HOME:-$HOME/.local/state}"
 SETTINGS_TOML="$STATE_HOME/noctalia/settings.toml"
 PLUGIN_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/noctalia/plugins/media-lyrics"
-ARCH_PACKAGES="playerctl python3"
-PLUGIN_DEPS="playerctl python3 cp chmod timeout"
+ARCH_PACKAGES="playerctl dbus python3"
+PLUGIN_DEPS="playerctl dbus-monitor python3 cp chmod timeout"
 
 usage() {
   cat <<'USAGE'

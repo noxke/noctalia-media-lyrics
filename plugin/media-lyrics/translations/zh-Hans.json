@@ -124,8 +124,8 @@
       "label": "播放器黑名单"
     },
     "poll_interval_ms": {
-      "description": "服务刷新 MPRIS 元数据和播放进度的间隔。",
-      "label": "播放器轮询频率（毫秒）"
+      "description": "MPRIS 的低频兜底校正间隔。正常的曲目、暂停与跳转变化会通过 D-Bus 立即到达。",
+      "label": "MPRIS 兜底校正间隔（毫秒）"
     },
     "qishui_api_url": {
       "description": "支持 {title}、{artist}、{album} 的接口模板；汽水公开接口不稳定，因此需要自行填写。",

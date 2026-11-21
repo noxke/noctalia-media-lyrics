@@ -4,12 +4,12 @@
 # written to disk for MPD clients.
 id = "noxke/media-lyrics"
 name = "MediaLyrics"
-version = "2.7.0"
+version = "2.8.1"
 # 22 is the first level whose entry scripts can require a shared module (progress.luau).
 plugin_api = 22
 author = "noxke"
 license = "MIT"
-dependencies = ["playerctl", "python3", "cp", "chmod", "timeout"]
+dependencies = ["playerctl", "dbus-monitor", "python3", "cp", "chmod", "timeout"]
 tags = ["bar", "panel", "service", "music", "media", "lyrics"]
 icon = "music"
 description = "Media widget with synchronized lyrics: the media widget's artwork, track text and progress, the current lyric line, a full lyrics panel, and .lrc/.txt lyric files saved for MPD clients."
@@ -187,9 +187,9 @@ key = "poll_interval_ms"
 type = "int"
 label_key = "settings.poll_interval_ms.label"
 description_key = "settings.poll_interval_ms.description"
-default = 500
-min = 100
-max = 5000
+default = 30000
+min = 5000
+max = 60000
 advanced = true
 
 # --- Lyric files (fork addition) ---------------------------------------------
@@ -220,7 +220,8 @@ default = true
 id = "open_panel"
 entry = "shortcut.luau"
 
-# Headless background service: polls MPRIS metadata, fetches lyrics, publishes state.
+# Headless background service: watches MPRIS events, reads metadata snapshots,
+# fetches lyrics, and publishes state.
 [[service]]
 id = "service"
 entry = "service.luau"

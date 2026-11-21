@@ -8,6 +8,8 @@ panel to pick one. This fork keeps all of that and adds:
   as a timestamped `.lrc` plus a timestamp-free `.txt`, so MPD clients such as ncmpcpp can display
   them without talking to the plugin;
 - **a music-only gate** — films and web videos are not written out;
+- **event-driven MPRIS** — one session-bus signal stream plus a slow reconciliation snapshot instead
+  of permanent metadata polling;
 - **media-widget behaviour** — the widget carries the settings, rendering rules and gestures of
   Noctalia's built-in `media` item (art, one text line, inline progress, hide rules), with the lyric
   line in place of the track text; the panel is a now-playing panel with transport controls, the full
@@ -36,7 +38,7 @@ panel to pick one. This fork keeps all of that and adds:
 | **Media widget**: the built-in `media` widget's twelve settings and its layout, minus `rotate_album_art` (the plugin API has no rotation), plus `show_lyrics` | `media.luau`, `plugin.toml` |
 | **Media panel**: cover, title/artist/album, progress with position/duration, prev/play-pause/next buttons, the full lyrics with the current line highlighted, plus upstream's lyric-source picker | `panel.luau`, `plugin.toml` |
 | Gesture defaults declared in the manifest (`left` panel, `right` play/pause, `back`/`forward` skip); presentation settings of 1.5.5 dropped | `plugin.toml`, `translations/` |
-| Version `1.5.5` → `2.7.0`, `plugin_api` → `22` | `plugin.toml` header |
+| Version `1.5.5` → `2.8.1`, `plugin_api` → `22` | `plugin.toml` header |
 
 ## What this fork adds
 

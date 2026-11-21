@@ -30,12 +30,13 @@ local MPD, a video in Firefox. Playback state comes from MPRIS; lyrics come from
 - Noctalia 5.2.x or newer (`plugin_api` 22 — the first level whose entry scripts can require a
   shared module)
 - `playerctl`
+- `dbus-monitor` (provided by `dbus`)
 - `python3`
 
 On Arch:
 
 ```sh
-sudo pacman -S --needed playerctl python3
+sudo pacman -S --needed playerctl dbus python3
 ```
 
 ## Install
@@ -55,7 +56,7 @@ Then, in Noctalia:
    Settings UI writes it.
 2. **Configure it** — `noctalia msg settings-open-plugin noxke/media-lyrics`, or Settings → Plugins →
    MediaLyrics. See [plugin/media-lyrics/README.md](plugin/media-lyrics/README.md) for every setting.
-3. **Disable any other lyrics plugin** so only one service polls MPRIS.
+3. **Disable any other lyrics plugin** so only one service keeps an MPRIS listener open.
 
 ## Capsule geometry
 

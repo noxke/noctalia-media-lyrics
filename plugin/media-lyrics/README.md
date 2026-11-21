@@ -1,4 +1,4 @@
-# MediaLyrics 2.7.0 (fork of Noctalia Lyrics)
+# MediaLyrics 2.8.1 (fork of Noctalia Lyrics)
 
 A media item for the Noctalia bar: album art, a single text line and an inline progress bar, with the
 current lyric line replacing `artist - title` while a track plays. A panel carries the transport
@@ -15,7 +15,7 @@ versions.
 | Field | Value |
 | --- | --- |
 | ID | `noxke/media-lyrics` |
-| Version | 2.7.0 (`plugin_api` 22) |
+| Version | 2.8.1 (`plugin_api` 22) |
 | Entries | Bar widget `media`, panel `panel`, service `service`, shortcut `open_panel` |
 
 ## Requirements
@@ -23,6 +23,7 @@ versions.
 Install these commands on `PATH`:
 
 - `playerctl`: read and control MPRIS players.
+- `dbus-monitor`: listen for MPRIS property, seek and player-owner changes.
 - `python3`: run the unified lyric-source adapter and the lyric writer.
 - `cp`: preserve local MPRIS artwork in the plugin cache.
 - `chmod`: secures the temporary request directory before credentials are written.
@@ -56,6 +57,12 @@ shows the album art (or a glyph when the track has none), the current lyric line
 when the track has no lyrics, `title - artist` with `artist_first` — and, with `show_progress`, a
 progress bar after the text. It hides itself according to `hide_when_no_media` and `hide_when_idle`.
 
+The service keeps one narrow `dbus-monitor` stream open for MPRIS `PropertiesChanged`, `Seeked` and
+player-owner signals. A signal triggers one metadata snapshot instead of a permanent 500 ms polling
+loop. A reconciliation snapshot every 30 seconds by default covers a missed event or a monitor that
+exited. The bar chooses its tick from the motion actually present: 20 Hz for marquee, 10 Hz for the
+lyric sweep, 4 Hz for the progress fill, and one second for paused, hidden or static content.
+
 Gestures and their defaults:
 
 | Gesture | Action |
@@ -87,7 +94,7 @@ Up / Page Down ten, while it has keyboard focus.
 ## Settings
 
 Plugin-wide settings cover source selection and order, translation language, timing offset, MPRIS
-polling, player filters, the lyrics directory and credentials.
+reconciliation, player filters, the lyrics directory and credentials.
 
 | Setting | Default | Meaning |
 | --- | --- | --- |
@@ -95,7 +102,7 @@ polling, player filters, the lyrics directory and credentials.
 | `lyrics_sources` | `lrclib`, `netease`, `splayer`, `qqmusic`, `kugou`, `qishui`, `apple_music`, `spotify`, `musixmatch` | Fallback order for `auto` |
 | `translation_language` | `zh-Hans` | Language requested from sources that translate |
 | `lyrics_offset_ms` | `0` | Positive shifts the highlighted line earlier |
-| `poll_interval_ms` | `500` | MPRIS poll interval |
+| `poll_interval_ms` | `30000` | Low-frequency MPRIS reconciliation interval; normal changes arrive over D-Bus |
 | `player_allowlist` / `player_blocklist` | empty | Restrict which MPRIS players are tracked |
 | `lyrics_directory` | empty | Directory for the `.lrc` and `.txt` files; empty writes none and keeps the lyrics in memory |
 | `music_only` | on | Treat a track with no artist tag as a video: no lyrics searched or written |
@@ -113,8 +120,8 @@ Per-widget settings:
 | `min_length` | `64` | Minimum widget width in logical pixels |
 | `max_length` | `176` | Maximum width; the text is trimmed to fit |
 | `art_size` | `16` | Album art box in logical pixels |
-| `title_scroll` | `none` | `none`, `always` or `on_hover` marquee for text wider than the label |
-| `show_progress` | off | Progress fill behind the text row |
+| `title_scroll` | `always` | `none`, `always` or `on_hover` marquee for text wider than the label |
+| `show_progress` | on | Progress fill behind the text row |
 | `hide_when_no_media` | off | Hide the item while no player is present |
 | `hide_when_idle` | off | Hide the item while a player is paused |
 

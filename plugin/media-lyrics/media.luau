@@ -43,6 +43,13 @@ local NARROW_PX = FONT_PX * 0.53
 -- end of it.
 local MARQUEE_PX_PER_SECOND = 30
 local MARQUEE_HOLD_SECONDS = 1.1
+-- The bar only needs full animation while playback is active. State watches
+-- handle track, lyric and cover changes; the slow tick is a settings/fallback
+-- pass for idle and paused entries.
+local MARQUEE_UPDATE_MS = 50
+local LYRIC_UPDATE_MS = 100
+local PROGRESS_UPDATE_MS = 250
+local IDLE_UPDATE_MS = 1000
 -- Fraction of a character the karaoke sweep blends across.
 local KARAOKE_BLEND = 0.16
 -- The shell insets a widget's capsule from its root box by
@@ -279,12 +286,23 @@ local playerName = ""
 local durationUs = 0
 
 local lastClock = 0
+local updateIntervalMs = nil
 
 local hovering = false
 local marqueeSeconds = 0
-local settingsClock = os.clock()
+local settingsClock = 0
 local lastSignature = ""
 local lastLineKey = nil
+local lastVisibility = nil
+local lastTooltip = nil
+local marqueeMoving = false
+local lyricAnimating = false
+local progressAnimating = false
+local lyricCache = nil
+local lyricCacheSource = nil
+local textCacheSource = nil
+local textCacheGlyphs = nil
+local textCacheWidth = 0
 
 local function clamp(value, low, high)
   if value < low then
@@ -294,6 +312,28 @@ local function clamp(value, low, high)
     return high
   end
   return value
+end
+
+local function wallSeconds()
+  if noctalia.nowMs ~= nil then return noctalia.nowMs() / 1000 end
+  return os.clock()
+end
+
+local function syncUpdateInterval()
+  local nextInterval = IDLE_UPDATE_MS
+  if playing and lastVisibility ~= false then
+    if marqueeMoving then
+      nextInterval = MARQUEE_UPDATE_MS
+    elseif lyricAnimating then
+      nextInterval = LYRIC_UPDATE_MS
+    elseif progressAnimating then
+      nextInterval = PROGRESS_UPDATE_MS
+    end
+  end
+  if nextInterval ~= updateIntervalMs then
+    updateIntervalMs = nextInterval
+    noctalia.setUpdateInterval(nextInterval)
+  end
 end
 
 local function trackArtists()
@@ -341,61 +381,66 @@ end
 -- Fraction of the line the song has passed. The service publishes line timing
 -- only, so the sweep interpolates towards the next timed line and holds on the
 -- last one.
-local function lineProgress(index, line)
-  local startMs = tonumber(line.time)
+local ensureLyricCache
+
+local function lineProgress(index, positionMs)
+  local cache = ensureLyricCache()
+  local startMs = cache and cache.times[index]
   if startMs == nil or startMs < 0 then
     return 1
   end
-  local endMs = nil
-  for nextIndex = index + 1, #lyrics do
-    local time = tonumber(lyrics[nextIndex].time)
-    if time ~= nil and time > startMs then
-      endMs = time
-      break
-    end
-  end
+  local endMs = cache.ends[index]
   if endMs == nil and durationUs > 0 then
     endMs = durationUs / 1000
   end
   if endMs == nil or endMs <= startMs then
     return 1
   end
-  return clamp((playback.getUs() / 1000 - startMs) / (endMs - startMs), 0, 1)
+  return clamp((positionMs - startMs) / (endMs - startMs), 0, 1)
 end
 
 -- The current lyric line for the playing position, with its index and the part
 -- of it already sung. Lines carry article time in milliseconds; a line without a
 -- time is only used when nothing is timed.
 local function currentLyric()
-  if lyrics == nil or #lyrics == 0 then
-    return nil
-  end
+  local cache = ensureLyricCache()
+  if cache == nil then return nil end
   local positionMs = math.floor(playback.getUs() / 1000)
-  local chosenIndex = nil
-  local timed = false
-  for index, line in ipairs(lyrics) do
-    local time = tonumber(line.time)
-    if time ~= nil and time >= 0 then
-      timed = true
-      if time <= positionMs then
-        chosenIndex = index
-      else
-        break
-      end
+  if #cache.timedIndexes == 0 then
+    local index = cache.untimedIndex
+    if index == nil or cache.texts[index] == "" then return nil end
+    return {
+      index = index,
+      text = cache.texts[index],
+      width = cache.widths[index],
+      glyphs = cache.glyphs[index],
+      progress = 1,
+    }
+  end
+  local low, high = 1, #cache.timedIndexes
+  local timedPosition = 0
+  while low <= high do
+    local middle = math.floor((low + high) / 2)
+    if cache.timedTimes[middle] <= positionMs then
+      timedPosition = middle
+      low = middle + 1
+    else
+      high = middle - 1
     end
   end
-  if chosenIndex == nil then
-    if timed then
-      return nil
-    end
-    chosenIndex = 1
-  end
-  local line = lyrics[chosenIndex]
-  local text = tostring(line.text or "")
+  if timedPosition == 0 then return nil end
+  local chosenIndex = cache.timedIndexes[timedPosition]
+  local text = cache.texts[chosenIndex]
   if text == "" then
     return nil
   end
-  return { index = chosenIndex, text = text, progress = lineProgress(chosenIndex, line) }
+  return {
+    index = chosenIndex,
+    text = text,
+    width = cache.widths[chosenIndex],
+    glyphs = cache.glyphs[chosenIndex],
+    progress = lineProgress(chosenIndex, positionMs),
+  }
 end
 
 -- Full-width glyphs (CJK, kana, hangul, full-width punctuation) take an em; the
@@ -414,14 +459,6 @@ local function glyphWidth(code)
   return NARROW_PX
 end
 
-local function textWidth(text)
-  local width = 0
-  for _, code in utf8.codes(text) do
-    width = width + glyphWidth(code)
-  end
-  return width
-end
-
 -- The characters of a label, each with the width it is estimated to take.
 local function splitGlyphs(text)
   local glyphs = {}
@@ -431,9 +468,82 @@ local function splitGlyphs(text)
   return glyphs
 end
 
+local function measuredGlyphs(text)
+  text = tostring(text or "")
+  if textCacheSource ~= text then
+    local glyphs = splitGlyphs(text)
+    local width = 0
+    for _, glyph in ipairs(glyphs) do width = width + glyph.width end
+    textCacheSource = text
+    textCacheGlyphs = glyphs
+    textCacheWidth = width
+  end
+  return textCacheGlyphs, textCacheWidth
+end
+
+local function textWidth(text)
+  local _, width = measuredGlyphs(text)
+  return width
+end
+
+ensureLyricCache = function()
+  if type(lyrics) ~= "table" or #lyrics == 0 then
+    lyricCacheSource = nil
+    lyricCache = nil
+    return nil
+  end
+  if lyricCacheSource == lyrics then return lyricCache end
+
+  local cache = {
+    times = {},
+    ends = {},
+    texts = {},
+    widths = {},
+    glyphs = {},
+    timedIndexes = {},
+    timedTimes = {},
+    untimedIndex = nil,
+    maxWidth = 0,
+  }
+  for index, line in ipairs(lyrics) do
+    local time = tonumber(line.time)
+    local text = tostring(line.text or "")
+    local glyphs = splitGlyphs(text)
+    local width = 0
+    for _, glyph in ipairs(glyphs) do width = width + glyph.width end
+    cache.times[index] = time
+    cache.texts[index] = text
+    cache.widths[index] = width
+    cache.glyphs[index] = glyphs
+    if width > cache.maxWidth then cache.maxWidth = width end
+    if time ~= nil and time >= 0 then
+      cache.timedIndexes[#cache.timedIndexes + 1] = index
+      cache.timedTimes[#cache.timedTimes + 1] = time
+    elseif cache.untimedIndex == nil and text ~= "" then
+      cache.untimedIndex = index
+    end
+  end
+  local position = 1
+  while position <= #cache.timedIndexes do
+    local nextPosition = position + 1
+    while nextPosition <= #cache.timedIndexes
+      and cache.timedTimes[nextPosition] == cache.timedTimes[position] do
+      nextPosition = nextPosition + 1
+    end
+    local endMs = cache.timedTimes[nextPosition]
+    for groupedPosition = position, nextPosition - 1 do
+      cache.ends[cache.timedIndexes[groupedPosition]] = endMs
+    end
+    position = nextPosition
+  end
+  lyricCacheSource = lyrics
+  lyricCache = cache
+  return cache
+end
+
 -- The part of `text` inside the budget-wide window that starts `offsetPx` in.
 local function windowText(text, offsetPx, budgetPx)
-  local glyphs = splitGlyphs(text)
+  local glyphs = measuredGlyphs(text)
   local first, last = nil, nil
   local consumed = 0
   for index, glyph in ipairs(glyphs) do
@@ -459,6 +569,7 @@ local function windowText(text, offsetPx, budgetPx)
 end
 
 local function marqueeActive()
+  if not playing then return false end
   if settings.titleScroll == "always" then
     return true
   end
@@ -512,8 +623,7 @@ end
 -- The lyric line as one label per character, so each one can carry its own
 -- colour. The window holds the characters inside the budget; the two it cuts in
 -- half fade out.
-local function glyphRow(key, text, offsetPx, budgetPx, progress)
-  local glyphs = splitGlyphs(text)
+local function glyphRow(key, glyphs, offsetPx, budgetPx, progress)
   local first, last = nil, nil
   local consumed = 0
   for index, glyph in ipairs(glyphs) do
@@ -596,12 +706,8 @@ end
 local function trackTextWidth(hasLyrics)
   local widest = textWidth(buildDisplayText())
   if hasLyrics and type(lyrics) == "table" then
-    for _, entry in ipairs(lyrics) do
-      local width = textWidth(tostring(entry.text or ""))
-      if width > widest then
-        widest = width
-      end
-    end
+    local cache = ensureLyricCache()
+    if cache and cache.maxWidth > widest then widest = cache.maxWidth end
   end
   return widest
 end
@@ -615,10 +721,14 @@ local function render()
   else
     showWidget = not settings.hideWhenNoMedia
   end
-  barWidget.setVisible(showWidget)
+  if showWidget ~= lastVisibility then
+    lastVisibility = showWidget
+    barWidget.setVisible(showWidget)
+  end
   if not showWidget then
     lastSignature = ""
     lastLineKey = nil
+    syncUpdateInterval()
     return
   end
 
@@ -638,7 +748,6 @@ local function render()
   local leading = showArtSlot and artSize or (showEmptyGlyph and GLYPH_SIZE or 0)
   local spacing = (showLabel and leading > 0) and SPACE_XS or 0
   local showProgress = settings.showProgress and not artOnly and hasPlayer and durationUs > 0
-  local progressValue = showProgress and clamp(playback.getUs() / durationUs, 0, 1) or 0
 
   local rowWidth = nil
   if not artOnly then
@@ -654,11 +763,21 @@ local function render()
     lastLineKey = lineKey
     marqueeSeconds = 0
   end
-  local travel = showLabel and math.max(0, textWidth(text) - labelBudget) or 0
-  local offsetPx = (showLabel and marqueeActive()) and marqueeOffset(travel) or 0
-  local progress = line and line.progress or 0
+  local displayWidth = line and line.width or textWidth(text)
+  local travel = showLabel and math.max(0, displayWidth - labelBudget) or 0
+  local activeMarquee = showLabel and marqueeActive() and travel > 0
+  local offsetPx = activeMarquee and marqueeOffset(travel) or 0
+  local progress = line and math.floor(line.progress * 100 + 0.5) / 100 or 0
   local inset = capsuleInset()
   local trackWidth = (rowWidth or maxLength) + 2 * inset
+  local rawProgressValue = showProgress and clamp(playback.getUs() / durationUs, 0, 1) or 0
+  local progressSteps = math.max(1, math.floor(trackWidth + 0.5))
+  local progressStep = math.floor(rawProgressValue * progressSteps + 0.5)
+  local progressValue = progressStep / progressSteps
+
+  marqueeMoving = activeMarquee
+  lyricAnimating = line ~= nil and playing and line.progress < 1
+  progressAnimating = showProgress and playing and progressStep < progressSteps
 
   -- The fill is the shell's own progress control, the one the built-in media
   -- widget uses: a full pill of the capsule's box whose rounded ends are revealed
@@ -676,9 +795,10 @@ local function render()
     tostring(showEmptyGlyph), tostring(showProgress), tostring(playing),
     cover, text, tostring(maxLength), tostring(minLength), tostring(math.floor(labelBudget)),
     tostring(rowWidth), tostring(math.floor(offsetPx)), string.format("%.2f", progress),
-    string.format("%.4f", progressValue), tostring(capsuleCross), tostring(isMusic),
+    tostring(progressStep), tostring(capsuleCross), tostring(isMusic),
   }, "|")
   if signature == lastSignature then
+    syncUpdateInterval()
     return
   end
   lastSignature = signature
@@ -703,7 +823,7 @@ local function render()
 
   if showLabel then
     if line then
-      content[#content + 1] = glyphRow("media-text", text, offsetPx, labelBudget, progress)
+      content[#content + 1] = glyphRow("media-text", line.glyphs, offsetPx, labelBudget, progress)
     else
       content[#content + 1] = ui.label({
         key = "media-text",
@@ -750,7 +870,12 @@ local function render()
     paddingH = -inset,
     paddingV = capsuleCross and 0 or -inset,
   }, children))
-  barWidget.setTooltip(tooltipText())
+  local tooltip = tooltipText()
+  if tooltip ~= lastTooltip then
+    lastTooltip = tooltip
+    barWidget.setTooltip(tooltip)
+  end
+  syncUpdateInterval()
 end
 
 function onHover(entered)
@@ -761,11 +886,12 @@ function onHover(entered)
 end
 
 function update()
-  local now = os.clock()
+  local now = wallSeconds()
   local delta = lastClock > 0 and (now - lastClock) or 0
   lastClock = now
+  if settingsClock == 0 then settingsClock = now end
 
-  -- Bar entries get no config-changed callback, so re-read the settings twice a
+  -- Bar entries get no config-changed callback, so re-read the settings once a
   -- second and re-render when one of them moved.
   if now - settingsClock >= 1 then
     settingsClock = now
@@ -782,6 +908,7 @@ function update()
   durationUs = playback.getDurationUs()
   playerInstance = noctalia.state.get("player_instance") or ""
   playerName = noctalia.state.get("player_name") or ""
+  syncUpdateInterval()
 
   if marqueeActive() then
     marqueeSeconds = marqueeSeconds + delta
@@ -793,17 +920,46 @@ end
 -- The playback clock owns the position, the duration and the playing flag, and this
 -- entry re-renders when one of them moves.
 playback.attach(function()
+  playing = playback.isPlaying()
+  durationUs = playback.getDurationUs()
+  syncUpdateInterval()
   lastSignature = ""
+  if not playing then marqueeSeconds = 0 end
+  render()
 end)
 
-noctalia.state.watch("lyrics", function()
+local function watchRender(key, apply)
+  noctalia.state.watch(key, function(value)
+    apply(value)
+    lastSignature = ""
+    render()
+  end)
+end
+
+watchRender("track", function(value) track = value end)
+watchRender("lyrics", function(value)
+  lyrics = value
+  lyricCacheSource = nil
+  lyricCache = nil
+  textCacheSource = nil
+end)
+watchRender("is_music", function(value) musicOnly = value end)
+watchRender("cover", function(value) cover = value or "" end)
+watchRender("player_instance", function(value) playerInstance = value or "" end)
+watchRender("player_name", function(value) playerName = value or "" end)
+
+noctalia.state.watch("lyrics_source_used", function()
   lastSignature = ""
+  render()
 end)
 
-noctalia.state.watch("cover", function()
+noctalia.state.watch("lyrics_file", function()
   lastSignature = ""
+  render()
 end)
 
--- One update per frame at 20 Hz: the karaoke sweep and the marquee move smoothly
--- at this rate, and a label tree that has not changed is skipped by the signature.
-noctalia.setUpdateInterval(33)
+-- State watches carry discrete changes. The timer follows the fastest motion the
+-- current frame actually contains: marquee, karaoke, progress, or only the slow
+-- settings/fallback tick. Paused and idle entries stay at one tick per second.
+playing = playback.isPlaying()
+syncUpdateInterval()

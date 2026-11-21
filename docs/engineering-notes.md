@@ -91,25 +91,21 @@ event, including a `track` watcher that reset the baseline unconditionally. And 
 player's 26.00 s over one probe window.
 
 **Fix.** One shared clock, `plugin/media-lyrics/progress.luau`, required by both entries
-(`media.luau:30`, `panel.luau`). It never assigns a report to the display: the display is carried by a
-rate inside 0.75 … 1.25 (`progress.luau:20-21`) and a report only steers that rate, using the report's
-middle as the best estimate of where the player really is (`MID_SECOND_US = 500000`, `:22-24`). A
-report is adopted outright only while paused or when it is a seek, i.e. more than 1.5 s behind or 2 s
-ahead of the display (`:15-16`, `:109-124`). Wall time comes from `noctalia.nowMs()` — "wall-clock
+(`media.luau:30`, `panel.luau`). Wall time comes from `noctalia.nowMs()` — "wall-clock
 milliseconds since the Unix epoch … the only way to see sub-second time"
 (`docs/user/plugins/development/runtime-api.mdx:106,114`) — with an `os.clock()` fallback. Because the
 module needs `require`, `plugin.toml` declares `plugin_api = 22`, the level that introduced
-`module-require` (`src/scripting/plugin_api.h:24`). The panel drives its own repaint at 200 ms
-(`panel.luau:642-648`, `:671`).
+`module-require` (`src/scripting/plugin_api.h:24`).
 
-**Why it cannot step back.** Every assignment that is not a pause or a seek is a forward move
-(`rate >= 0.75 > 0`), so the fill width, the karaoke sweep and the time labels are monotone. The price
-is a bounded error around the whole-second source.
+The first clock used a 0.75 … 1.25 correction rate that persisted until the next report. That worked
+with twice-a-second polling, but after 2.8.0 made MPRIS event-driven, the next report could be 30
+seconds away: a correction rate could then drift the lyrics by seconds. Since 2.8.1 the clock advances
+at exactly 1.0× between reports. A report may pull it forward by the whole-second midpoint
+(`MID_SECOND_US = 500000`), while a pause, seek, or drift over 1.5 seconds resynchronizes it directly.
 
-**Evidence.** 322 render samples over ~85 s: displayed position, fill width and sweep fraction had
-zero decreases; the display stayed within −783 … +1204 ms of the report; the raw report changed only
-in 1000 ms steps. On the panel, three captures 1 s apart put the bar's fill edge at 1189 → 1193 → 1195
-device px.
+**Earlier evidence.** 322 render samples over ~85 s under the polling clock: displayed position, fill
+width and sweep fraction had zero decreases; the display stayed within −783 … +1204 ms of the report;
+the raw report changed only in 1000 ms steps.
 
 ## 4. The widget's progress fill and the capsule
 
@@ -289,3 +285,34 @@ checkout is cited above by file and line; the checkout itself is one `git clone`
   hand-edited, while a `[widget.<name>]` value typed by hand applies at once.
 - Conventions: code, comments and docs in English; the plugin UI ships `en` and `zh-Hans` and Noctalia
   picks by locale. Chinese is the real shape of lyric fixtures. Credentials are never read or printed.
+
+## 10. Idle CPU: polling and repainting at playback rates
+
+**Symptom.** The plugin used noticeable CPU with no music playing, including while the media widget
+was hidden.
+
+**Cause.** Nothing in the service or bar entry distinguished active playback from idle. The service
+woke at 10 Hz and launched `timeout playerctl --all-players metadata` every 500 ms. The bar entry ran
+`update()` at 33 ms, despite a comment claiming 20 Hz, and performed its lyric scans and text-width
+calculation before discovering that the rendered signature had not changed. A paused poll also
+republished `position` and `track`, and `progress.luau` reported every repeated position as a change,
+which forced another render. With the manifest default `title_scroll = "always"`, a paused title or
+lyric could additionally rebuild a per-character label tree at 30 Hz.
+
+**Fix.** MPRIS is now treated as an event source. One `runStream("dbus-monitor …")` process watches
+`PropertiesChanged`, `Seeked` and MPRIS `NameOwnerChanged`; a matching signal triggers one
+`playerctl --all-players metadata` snapshot. A 30-second reconciliation snapshot keeps a missed event
+or an exited monitor from leaving stale state. `runStream` is part of the base runtime API, so this
+does not raise the plugin's API 22 floor.
+
+The service no longer republishes identical player, track, position, music-only or playing values.
+The bar uses `state.watch` for discrete changes and lowers `setUpdateInterval` to 1 second while
+paused, idle or hidden. Visible playback chooses 50 ms for marquee motion, 100 ms for the timed lyric
+sweep, and 250 ms for a progress-only update. The marquee requires playback, lyric data is cached,
+visibility is written only when it changes, and a closed panel does not render its dirty tree.
+
+**Why events do not carry the whole state.** An MPRIS property payload is typed D-Bus data, while
+`runStream` supplies text lines. Parsing those lines in Luau would duplicate the player-selection and
+metadata rules already implemented in the snapshot path. Using the signal only as a wake-up and
+reading one snapshot keeps the existing rules authoritative and makes missed or coalesced events
+self-correcting.

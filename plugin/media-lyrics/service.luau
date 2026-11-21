@@ -1,9 +1,10 @@
 --!nonstrict
 -- Lyrics — headless service.
--- Polls MPRIS metadata via playerctl, fetches lyrics from NetEase Cloud Music
--- via /api endpoints, publishes state. No polling delay.
+-- Listens for MPRIS changes on the session bus, reads a metadata snapshot when
+-- one arrives, fetches lyrics, and publishes state. A slow reconciliation poll
+-- keeps working if the D-Bus monitor or a player event is missed.
 
-local updateIntervalMs = 100
+local updateIntervalMs = 1000
 noctalia.setUpdateInterval(updateIntervalMs)
 
 local cache = {}
@@ -15,6 +16,9 @@ local lastTrackKey = ""
 local inFlight = nil
 local fetchGeneration = 0
 local pollInFlight = false
+local pollQueued = false
+local lastPollAtMs = 0
+local mprisEventsActive = false
 local coverInFlight = nil
 local coverFetchGeneration = 0
 local maxCoverFiles = 80
@@ -30,7 +34,7 @@ local lyricsSources = noctalia.getConfig("lyrics_sources") or {
 }
 local customUrl = noctalia.getConfig("custom_url") or ""
 local customJsonField = noctalia.getConfig("custom_json_field") or "syncedLyrics"
-local pollIntervalMs = tonumber(noctalia.getConfig("poll_interval_ms")) or 500
+local pollIntervalMs = math.max(5000, tonumber(noctalia.getConfig("poll_interval_ms")) or 30000)
 local lyricsOffsetMs = tonumber(noctalia.getConfig("lyrics_offset_ms")) or 0
 -- Lyric file settings (fork addition): every track's lyrics are written to disk
 -- as "<artist> - <title>.lrc" (timed) and ".txt" (plain, for ncmpcpp) once a
@@ -51,6 +55,12 @@ local currentArtUrl = ""
 local currentCoverUrl = ""
 local pendingSourceCoverUrl = ""
 local mprisCoverFailed = false
+local playerStateCleared = false
+local publishedPlayerInstance = nil
+local publishedPlayerName = nil
+local publishedIsMusic = nil
+local publishedPlaying = nil
+local publishedPosition = nil
 local maybeApplyCover
 
 for _, name in ipairs(noctalia.listDir(requestDir) or {}) do
@@ -109,6 +119,11 @@ end
 local function playerAllowed(player)
   if #playerAllowlist > 0 and not matchesAny(player, playerAllowlist) then return false end
   return not matchesAny(player, playerBlocklist)
+end
+
+local function wallMs()
+  if noctalia.nowMs ~= nil then return noctalia.nowMs() end
+  return os.clock() * 1000
 end
 
 local function trimMetadataField(value)
@@ -175,6 +190,8 @@ local function selectPlayer(players)
   return best
 end
 local function clearPlayerState()
+  if playerStateCleared then return end
+  playerStateCleared = true
   fetchGeneration = fetchGeneration + 1
   coverFetchGeneration = coverFetchGeneration + 1
   currentPlayerInstance = ""
@@ -191,10 +208,16 @@ local function clearPlayerState()
   noctalia.state.set("player_name", nil)
   noctalia.state.set("track", nil)
   noctalia.state.set("lyrics", nil)
+  noctalia.state.set("lyrics_source_used", nil)
   noctalia.state.set("is_music", nil)
   publishCandidates("")
   noctalia.state.set("cover", nil)
   noctalia.state.set("playing", false)
+  publishedPlayerInstance = nil
+  publishedPlayerName = nil
+  publishedIsMusic = nil
+  publishedPlaying = false
+  publishedPosition = nil
 end
 
 local function stableHash(value)
@@ -959,8 +982,12 @@ local function considerLyricsWrite()
 end
 
 local function poll()
-  if pollInFlight then return end
+  if pollInFlight then
+    pollQueued = true
+    return
+  end
   pollInFlight = true
+  lastPollAtMs = wallMs()
   -- xesam:asText can contain an entire lyric file. Only request it when it
   -- is configured as a lyric source; otherwise it needlessly inflates every
   -- poll result and can exhaust the async callback CPU budget.
@@ -969,141 +996,182 @@ local function poll()
     .. embeddedFormat .. [[\036')" 2>/dev/null]]
 
   local started = noctalia.runAsync(cmd, function(r)
-    pollInFlight = false
-    if r.exitCode ~= 0 or not r.stdout or r.stdout == "" then
-      clearPlayerState()
-      return
-    end
-    if #r.stdout > 131072 then
-      clearPlayerState()
-      return
-    end
-
-    local players = {}
-    local fieldSeparator = string.char(31)
-    local recordSeparator = string.char(30)
-    for _, record in ipairs(splitMetadata(r.stdout, recordSeparator)) do
-      if record ~= "" then
-        local parts = splitMetadata(record, fieldSeparator)
-        for index, field in ipairs(parts) do
-          parts[index] = trimMetadataField(field)
-        end
-        local player = {
-          instance = parts[1] or "",
-          name = parts[2] or "",
-          status = parts[3] or "stopped",
-          title = parts[4] or "",
-          artist = parts[5] or "",
-          album = parts[6] or "",
-          position = tonumber(parts[7]) or 0,
-          duration = tonumber(parts[8]) or 0,
-          artUrl = parts[9] or "",
-          trackId = parts[10] or "",
-          mediaUrl = parts[11] or "",
-          embeddedLyrics = parts[12] or "",
-        }
-        if player.instance ~= "" or player.name ~= "" then players[#players + 1] = player end
+    local ok, err = pcall(function()
+      if r.exitCode ~= 0 or not r.stdout or r.stdout == "" then
+        clearPlayerState()
+        return
       end
-    end
+      if #r.stdout > 131072 then
+        clearPlayerState()
+        return
+      end
 
-    local selected = selectPlayer(players)
-    if not selected then
-      clearPlayerState()
-      return
-    end
-
-    currentPlayerInstance = selected.instance
-    noctalia.state.set("player_instance", selected.instance)
-    noctalia.state.set("player_name", selected.name)
-
-    if selected.title == "" and selected.artist == "" then
-      fetchGeneration = fetchGeneration + 1
-      inFlight = nil
-      currentTrack = nil
-      currentEmbeddedLyrics = ""
-      lastTrackKey = ""
-      noctalia.state.set("track", nil)
-      noctalia.state.set("lyrics", nil)
-      noctalia.state.set("lyrics_source_used", nil)
-      noctalia.state.set("is_music", nil)
-      publishCandidates("")
-      noctalia.state.set("playing", selected.status == "playing")
-      return
-    end
-
-    local playing = selected.status == "playing"
-    local t = {
-      title = selected.title,
-      artist = selected.artist,
-      album = selected.album,
-      status = selected.status,
-      position = selected.position,
-      duration = selected.duration,
-      playerInstance = selected.instance,
-      trackId = selected.trackId,
-      mediaUrl = selected.mediaUrl,
-    }
-    local tk = trackKey(t)
-    currentTrack = t
-    currentEmbeddedLyrics = selected.embeddedLyrics
-    local previousArtUrl = currentArtUrl
-    currentArtUrl = selected.artUrl
-    -- The bar entry shows the title on one line for a video instead of a lyric
-    -- line, and the panel hides its lyric page rather than searching for one.
-    local isMusic = looksLikeMusic(t)
-    noctalia.state.set("is_music", isMusic)
-
-    noctalia.state.set("position", t.position + lyricsOffsetMs * 1000)
-
-    if tk ~= lastTrackKey then
-      lastTrackKey = tk
-      currentCoverUrl = ""
-      pendingSourceCoverUrl = ""
-      mprisCoverFailed = false
-      coverFetchGeneration = coverFetchGeneration + 1
-      coverInFlight = nil
-      noctalia.state.set("track", t)
-      noctalia.state.set("playing", playing)
-
-      local cached = isMusic and cache[tk] or nil
-      if cached then
-        noctalia.state.set("lyrics", cached)
-        noctalia.state.set("lyrics_source_used", "cache")
-        publishCandidates(tk)
-      else
-        noctalia.state.set("lyrics", nil)
-        publishCandidates(isMusic and tk or "")
-        if isMusic then
-          fetchLyricsNetEase(t, selected.embeddedLyrics)
+      local players = {}
+      local fieldSeparator = string.char(31)
+      local recordSeparator = string.char(30)
+      for _, record in ipairs(splitMetadata(r.stdout, recordSeparator)) do
+        if record ~= "" then
+          local parts = splitMetadata(record, fieldSeparator)
+          for index, field in ipairs(parts) do
+            parts[index] = trimMetadataField(field)
+          end
+          local player = {
+            instance = parts[1] or "",
+            name = parts[2] or "",
+            status = parts[3] or "stopped",
+            title = parts[4] or "",
+            artist = parts[5] or "",
+            album = parts[6] or "",
+            position = tonumber(parts[7]) or 0,
+            duration = tonumber(parts[8]) or 0,
+            artUrl = parts[9] or "",
+            trackId = parts[10] or "",
+            mediaUrl = parts[11] or "",
+            embeddedLyrics = parts[12] or "",
+          }
+          if player.instance ~= "" or player.name ~= "" then players[#players + 1] = player end
         end
       end
 
-      noctalia.state.set("cover", nil)
-      if selected.artUrl ~= "" then
-        pendingSourceCoverUrl = sourceCoverCache[tk] or ""
-        fetchCover(t, selected.artUrl)
-      elseif sourceCoverCache[tk] then
-        maybeApplyCover(t, sourceCoverCache[tk])
+      local selected = selectPlayer(players)
+      if not selected then
+        clearPlayerState()
+        return
       end
-    else
-      noctalia.state.set("track", t)
-      noctalia.state.set("playing", playing)
-      if selected.artUrl ~= previousArtUrl and selected.artUrl ~= "" then
+
+      if selected.title == "" and selected.artist == "" then
+        clearPlayerState()
+        return
+      end
+
+      playerStateCleared = false
+      currentPlayerInstance = selected.instance
+      if publishedPlayerInstance ~= selected.instance then
+        publishedPlayerInstance = selected.instance
+        noctalia.state.set("player_instance", selected.instance)
+      end
+      if publishedPlayerName ~= selected.name then
+        publishedPlayerName = selected.name
+        noctalia.state.set("player_name", selected.name)
+      end
+
+      local playing = selected.status == "playing"
+      local t = {
+        title = selected.title,
+        artist = selected.artist,
+        album = selected.album,
+        status = selected.status,
+        position = selected.position,
+        duration = selected.duration,
+        playerInstance = selected.instance,
+        trackId = selected.trackId,
+        mediaUrl = selected.mediaUrl,
+      }
+      local tk = trackKey(t)
+      local trackChanged = tk ~= lastTrackKey
+      currentTrack = t
+      currentEmbeddedLyrics = selected.embeddedLyrics
+      local previousArtUrl = currentArtUrl
+      currentArtUrl = selected.artUrl
+      -- The bar entry shows the title on one line for a video instead of a lyric
+      -- line, and the panel hides its lyric page rather than searching for one.
+      local isMusic = looksLikeMusic(t)
+      if publishedIsMusic ~= isMusic then
+        publishedIsMusic = isMusic
+        noctalia.state.set("is_music", isMusic)
+      end
+
+      local position = t.position + lyricsOffsetMs * 1000
+      if trackChanged or publishedPosition ~= position then
+        publishedPosition = position
+        noctalia.state.set("position", position)
+      end
+
+      if trackChanged then
+        lastTrackKey = tk
+        currentCoverUrl = ""
+        pendingSourceCoverUrl = ""
+        mprisCoverFailed = false
+        coverFetchGeneration = coverFetchGeneration + 1
+        coverInFlight = nil
+        noctalia.state.set("track", t)
+
+        local cached = isMusic and cache[tk] or nil
+        if cached then
+          noctalia.state.set("lyrics", cached)
+          noctalia.state.set("lyrics_source_used", "cache")
+          publishCandidates(tk)
+        else
+          noctalia.state.set("lyrics", nil)
+          publishCandidates(isMusic and tk or "")
+          if isMusic then
+            fetchLyricsNetEase(t, selected.embeddedLyrics)
+          end
+        end
+
+        noctalia.state.set("cover", nil)
+        if selected.artUrl ~= "" then
+          pendingSourceCoverUrl = sourceCoverCache[tk] or ""
+          fetchCover(t, selected.artUrl)
+        elseif sourceCoverCache[tk] then
+          maybeApplyCover(t, sourceCoverCache[tk])
+        end
+      elseif selected.artUrl ~= previousArtUrl and selected.artUrl ~= "" then
         mprisCoverFailed = false
         fetchCover(t, selected.artUrl)
       end
+
+      if publishedPlaying ~= playing then
+        publishedPlaying = playing
+        noctalia.state.set("playing", playing)
+      end
+    end)
+    pollInFlight = false
+    if not ok then
+      noctalia.log("MPRIS metadata update failed: " .. tostring(err))
+    end
+    if pollQueued and lyricsSource ~= "external" then
+      pollQueued = false
+      poll()
     end
   end)
   if not started then pollInFlight = false end
 end
 
-local pollElapsedMs = pollIntervalMs
+local function startMprisEventStream()
+  if type(noctalia.runStream) ~= "function" then return false end
+  if type(noctalia.commandExists) == "function" and not noctalia.commandExists("dbus-monitor") then
+    return false
+  end
+
+  local function rule(value)
+    return shellQuote(value)
+  end
+  local command = "dbus-monitor --session "
+    .. rule("type='signal',interface='org.freedesktop.DBus.Properties',member='PropertiesChanged',path='/org/mpris/MediaPlayer2'")
+    .. " "
+    .. rule("type='signal',interface='org.mpris.MediaPlayer2.Player',member='Seeked',path='/org/mpris/MediaPlayer2'")
+    .. " "
+    .. rule("type='signal',interface='org.freedesktop.DBus',member='NameOwnerChanged',arg0namespace='org.mpris.MediaPlayer2'")
+
+  local started = noctalia.runStream(command, function(line)
+    if lyricsSource == "external" then return end
+    if line:find("member=PropertiesChanged", 1, true)
+      or line:find("member=Seeked", 1, true)
+      or line:find("member=NameOwnerChanged", 1, true) then
+      poll()
+    end
+  end)
+  if not started then
+    noctalia.log("MPRIS event stream unavailable; using reconciliation polling")
+  end
+  return started
+end
 
 function update()
   if lyricsSource == "external" then return end
-  pollElapsedMs = pollElapsedMs + updateIntervalMs
-  if pollElapsedMs >= pollIntervalMs then
-    pollElapsedMs = 0
+  local interval = mprisEventsActive and pollIntervalMs or math.min(pollIntervalMs, 5000)
+  if wallMs() - lastPollAtMs >= interval then
     poll()
   end
 
@@ -1115,7 +1183,7 @@ function onConfigChanged()
   local nextUrl = noctalia.getConfig("custom_url") or ""
   local nextField = noctalia.getConfig("custom_json_field") or "syncedLyrics"
   local nextSources = noctalia.getConfig("lyrics_sources") or lyricsSources
-  local nextPollInterval = tonumber(noctalia.getConfig("poll_interval_ms")) or 500
+  local nextPollInterval = tonumber(noctalia.getConfig("poll_interval_ms")) or 30000
   local nextOffset = tonumber(noctalia.getConfig("lyrics_offset_ms")) or 0
   local nextCredentialSignature = table.concat({
     noctalia.getConfig("spotify_sp_dc") or "",
@@ -1140,11 +1208,14 @@ function onConfigChanged()
   customUrl = nextUrl
   customJsonField = nextField
   lyricsSources = nextSources
-  pollIntervalMs = math.max(100, nextPollInterval)
+  pollIntervalMs = math.max(5000, nextPollInterval)
   lyricsOffsetMs = nextOffset
   credentialSignature = nextCredentialSignature
   playerAllowlist = nextAllowlist
   playerBlocklist = nextBlocklist
+  if lyricsSource ~= "external" and not mprisEventsActive then
+    mprisEventsActive = startMprisEventStream()
+  end
   -- Lyric file settings. Changing the directory makes the current track's
   -- lyric files eligible to be written again.
   local nextLyricsDirectory = noctalia.getConfig("lyrics_directory") or ""
@@ -1205,6 +1276,7 @@ end)
 local function applyPushedLyrics(payload)
   local decoded = noctalia.json.decode(payload or "")
   if type(decoded) == "table" then
+    playerStateCleared = false
     if decoded.track then
       currentTrack = decoded.track
       lastTrackKey = trackKey(decoded.track)
@@ -1240,6 +1312,7 @@ end
 
 function onIpc(event, payload)
   if event == "push-lrc" then
+    playerStateCleared = false
     local tk = currentTrack and trackKey(currentTrack) or ""
     candidateCache[tk] = nil
     selectedCandidateCache[tk] = nil
@@ -1262,4 +1335,7 @@ function onIpc(event, payload)
   end
 end
 
-if lyricsSource ~= "external" then poll() end
+if lyricsSource ~= "external" then
+  mprisEventsActive = startMprisEventStream()
+  poll()
+end

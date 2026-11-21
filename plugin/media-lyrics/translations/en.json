@@ -124,8 +124,8 @@
       "label": "Blocked players"
     },
     "poll_interval_ms": {
-      "description": "How often the service refreshes MPRIS metadata and playback position.",
-      "label": "Player polling interval (ms)"
+      "description": "Low-frequency reconciliation interval for MPRIS. Normal track, pause and seek changes arrive immediately over D-Bus.",
+      "label": "MPRIS reconciliation interval (ms)"
     },
     "qishui_api_url": {
       "description": "Endpoint template supporting {title}, {artist}, and {album}. Required because public Qishui endpoints vary.",

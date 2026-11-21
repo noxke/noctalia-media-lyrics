@@ -6,6 +6,36 @@
   keeps that id until it is reinstalled.
 - `LICENSE` carries both copyright lines: `h465855hgg` for upstream 1.5.5 and `noxke` for this fork.
 
+## 2.8.1 — adaptive playback painting
+
+- The bar now selects its tick from the active visual work: 50 ms for a moving marquee, 100 ms for a
+  timed lyric sweep, 250 ms for the progress fill, and one second for static playback, pauses, idle
+  and hidden widgets. The previous playback path always ran at 50 ms.
+- Timed lyric lookup became a binary search over a cached timeline. Line end times, UTF-8 glyphs,
+  widths, maximum lyric width and the measured non-lyric text are reused until the lyric table changes.
+- Karaoke progress is quantized to one percent and the progress fill to one logical pixel, avoiding
+  invisible tree changes.
+- Tooltips are submitted only when their text changes.
+- The open panel now renders its whole lyric list once per second while playing. Its slider and clock
+  already use whole-second values, so the former 200 ms repaint did not add visible resolution.
+- The shared clock now free-runs at 1.0× between sparse event-driven reports, resynchronizing on a
+  seek, pause, or large drift. It no longer carries a 0.75–1.25× correction rate until the next
+  snapshot, which could make lyrics drift by seconds between 30-second reconciliation polls.
+
+## 2.8.0 — event-driven MPRIS and an idle bar
+
+- The service now listens for MPRIS `PropertiesChanged`, `Seeked` and player-owner signals through one
+  long-lived `dbus-monitor` stream. A signal triggers one metadata snapshot instead of launching
+  `playerctl` twice a second forever.
+- `poll_interval_ms` is now a 30-second reconciliation interval, with a 5-second minimum. It repairs a
+  missed event or a monitor that exited; normal track, pause, resume and seek changes arrive over D-Bus.
+- Identical player, track, position, music-only and playing states are no longer republished. Duplicate
+  paused position reports no longer invalidate the UI signature.
+- The bar repaints at 20 Hz only while playback is visible. Paused, hidden and idle widgets use a
+  one-second fallback tick and render immediately from `noctalia.state.watch` sources.
+- The marquee stops while paused, lyric widths are cached until the lyric table changes, and a closed
+  panel no longer renders from its dirty flag.
+
 ## 2.7.0 — songs by artist, and one bar source
 
 - A track is a song when its `artist` tag is non-empty, and a film or web video when it is not. The
